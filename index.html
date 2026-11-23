@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>חשבון טיול</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#14213D">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="חשבון טיול">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -958,6 +964,7 @@ document.addEventListener('change', e=>{
 });
 
 /* ---------- boot ---------- */
+if('serviceWorker' in navigator && location.protocol==='https:'){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 async function makeDb(){
   const V='10.12.2';
   const A=await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
