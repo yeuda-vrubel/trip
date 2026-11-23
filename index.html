@@ -338,9 +338,81 @@ function settle(bal){
   return out;
 }
 
+/* ---------- who may create trips ---------- */
+function creatorCode(){ return lsGet('creatorCode')||''; }
+function isMaster(){ return lsGet('isMaster')==='1' && !!creatorCode(); }
+function creatorExp(){ return isMaster()? Infinity : +(lsGet('creatorExp')||0); }
+function canCreate(){ return !!creatorCode() && creatorExp()>Date.now(); }
+function fmtDT(ms){ try{ return new Date(ms).toLocaleString('he-IL',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+function acceptInvite(code, exp){
+  if(isMaster()) { toast('את/ה כבר המארגן הראשי'); return; }
+  lsSet('creatorCode',code); lsSet('creatorExp',String(exp)); lsSet('isMaster','0');
+  setTimeout(()=>toast(exp>Date.now()?'קיבלת הרשאה ליצור טיולים עד '+fmtDT(exp):'ההרשאה הזו כבר פגה'),300);
+}
+function myInvites(){ try{ return JSON.parse(lsGet('myInvites')||'[]'); }catch(e){ return []; } }
+function setMyInvites(a){ lsSet('myInvites',JSON.stringify(a)); }
+function inviteCode(){ const a=new Uint8Array(10); crypto.getRandomValues(a); return Array.from(a,b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join(''); }
+function organizerForm(){
+  const el=openModal(`<h3>קוד מארגן</h3>
+    <p class="muted" style="margin-top:-6px">רק מארגנים יכולים ליצור טיולים. הקלידו את קוד המארגן שלכם, או בקשו מהמארגן קישור הרשאה.</p>
+    <form id="orgForm"><label for="orgInp" class="sr">קוד מארגן</label>
+      <input class="inp" id="orgInp" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" style="direction:ltr;text-align:center;font-size:22px;letter-spacing:2px">
+      <div class="err" id="orgErr"></div>
+      <div class="actions"><button class="btn primary" type="submit" id="orgOk">אישור</button><button class="btn" type="button" id="orgCancel">ביטול</button></div></form>`);
+  el.querySelector('#orgCancel').onclick=closeModal;
+  el.querySelector('#orgForm').onsubmit=async e=>{
+    e.preventDefault(); const code=el.querySelector('#orgInp').value.trim().toUpperCase(); const err=el.querySelector('#orgErr'), ok=el.querySelector('#orgOk');
+    if(code.length<6) return err.textContent='הקוד קצר מדי';
+    ok.disabled=true; err.textContent='בודק…';
+    if(await db.checkMaster(code)){ lsSet('creatorCode',code); lsSet('isMaster','1'); lsSet('creatorExp',''); closeModal(); render(); toast('מעולה! עכשיו אפשר ליצור טיולים ולתת הרשאות'); tripForm(null); }
+    else { ok.disabled=false; err.textContent='הקוד לא נכון'; }
+  };
+  setTimeout(()=>el.querySelector('#orgInp').focus(),50);
+}
+function grantForm(){
+  const durs=[['יום',1],['3 ימים',3],['שבוע',7],['חודש',30]]; let days=7;
+  const el=openModal(`<h3>הרשאה ליצירת טיולים</h3>
+    <div class="field"><label for="gName">למי?</label><input class="inp" id="gName" placeholder="שם, למשל: דנה"></div>
+    <div class="field"><span class="lbl">לכמה זמן?</span><div class="chips" id="gDur">${durs.map(([l,d])=>`<button type="button" class="chip ${d===days?'on':''}" data-d="${d}">${l}</button>`).join('')}</div></div>
+    <div class="err" id="gErr"></div>
+    <div class="actions" id="gAct"><button class="btn primary" id="gOk">יצירת קישור הרשאה</button><button class="btn" id="gCancel">ביטול</button></div>`);
+  el.querySelector('#gCancel').onclick=closeModal;
+  el.querySelector('#gDur').onclick=e=>{ const b=e.target.closest('[data-d]'); if(!b) return; days=+b.dataset.d; el.querySelectorAll('#gDur .chip').forEach(c=>c.classList.toggle('on',c===b)); };
+  el.querySelector('#gOk').onclick=async ev=>{
+    const name=el.querySelector('#gName').value.trim()||'מישהו'; const exp=Date.now()+days*864e5, code=inviteCode();
+    ev.target.disabled=true;
+    try{ await db.writeInvite(code,{master:creatorCode(),expiresAt:exp,name}); }
+    catch(e){ ev.target.disabled=false; el.querySelector('#gErr').textContent='לא הצלחתי ליצור הרשאה. בדקו שהכללים ב-Firebase עודכנו.'; return; }
+    setMyInvites([{code,name,exp},...myInvites()]);
+    const link=location.href.split('#')[0]+'#invite-'+code+'-'+exp;
+    const msg=`היי ${name}! נתתי לך הרשאה ליצור טיולים באפליקציית חשבון טיול עד ${fmtDT(exp)}. פותחים את הקישור הזה בטלפון:\n${link}`;
+    el.querySelector('#gAct').innerHTML=`<a class="btn wa" style="flex:2;padding:15px" target="_blank" rel="noopener" href="${esc(waLink('',msg))}">שליחה בוואטסאפ</a><button class="btn" id="gClose">סגירה</button>`;
+    el.querySelector('#gClose').onclick=()=>{ closeModal(); render(); };
+    render();
+  };
+}
+async function revokeInvite(code){
+  const inv=myInvites().find(x=>x.code===code); if(!inv) return;
+  try{ await db.writeInvite(code,{master:creatorCode(),expiresAt:Date.now()-1000,name:inv.name}); inv.exp=Date.now()-1000; setMyInvites(myInvites().map(x=>x.code===code?inv:x)); render(); toast('ההרשאה בוטלה'); }
+  catch(e){ toast('הביטול נכשל, נסו שוב'); }
+}
+function adminPanel(){
+  if(!isMaster()) {
+    if(creatorCode()) { const exp=creatorExp(); return `<div class="banner ${exp>Date.now()?'info':''}">${exp>Date.now()?'יש לך הרשאה ליצור טיולים עד '+esc(fmtDT(exp)):'ההרשאה שלך ליצור טיולים פגה. כדי ליצור טיול חדש בקשו הרשאה חדשה מהמארגן.'}</div>`; }
+    return '';
+  }
+  const inv=myInvites().slice(0,20);
+  return `<div class="sec-h"><h3>הרשאות ליצירת טיולים</h3><button class="btn sm dark" data-act="grant">${ico('plus',16,2.5)} מתן הרשאה</button></div>
+  ${inv.length?`<div class="card" style="padding-bottom:4px">${inv.map(x=>{ const live=x.exp>Date.now();
+    return `<div class="xfer"><span class="mid"><b>${esc(x.name)}</b><br><small class="muted">${live?'בתוקף עד '+esc(fmtDT(x.exp)):'פג תוקף'}</small></span>${live?`<button class="btn sm soft" data-act="revoke" data-code="${esc(x.code)}">ביטול</button>`:''}</div>`;}).join('')}</div>`
+  : `<div class="hint" style="margin:0 4px">רק את/ה יכול/ה ליצור טיולים. כדי שמישהו אחר יוכל, לחצו "מתן הרשאה".</div>`}`;
+}
+
 /* ---------- routing ---------- */
 function route(){
   const h=location.hash.slice(1);
+  const inv=h.match(/^invite-([A-Za-z0-9]{8,})-(\d{10,})$/);
+  if(inv){ acceptInvite(inv[1], +inv[2]); history.replaceState(null,'',location.pathname); }
   if(h.startsWith('trip-') && h.length>5){ const id=h.slice(5); if(S.tripId!==id) openTrip(id); S.route='trip'; }
   else { if(S.tripId) closeTrip(); S.route='home'; }
   render();
@@ -393,7 +465,8 @@ function renderHome(){
         <span style="flex:1;min-width:0"><b>${esc(t.name)}</b><small>הטיולים שלך בלבד</small></span>
         <span class="muted" style="transform:scaleX(-1);display:flex">${ico('back',18)}</span>
       </a>`).join('')}</div>`
-      : `<div class="empty"><div class="big-ico">${ico('plane',28)}</div>עוד אין טיולים.${canWrite?'<br>לחצו על "טיול חדש" כדי להתחיל.':''}</div>`}
+      : `<div class="empty"><div class="big-ico">${ico('plane',28)}</div>עוד אין טיולים.${canCreate()?'<br>לחצו על "טיול חדש" כדי להתחיל.':'<br>קיבלתם קישור לטיול? פתחו אותו מוואטסאפ.'}</div>`}
+    ${adminPanel()}
   </main>`;
 }
 
@@ -669,7 +742,8 @@ function tripForm(existing){
       } else {
         const id=secretId();
         lsSet('pass-'+id,'creator');
-        await tripRef(id).set({name, base, participants:parts, rates:{}, createdAt:Date.now()});
+        try{ await db.createTrip(id, {name, base, participants:parts, rates:{}, createdAt:Date.now()}, creatorCode()); }
+        catch(e){ ev.target.disabled=false; el.querySelector('#tErr').textContent = isMaster()? 'יצירת הטיול נכשלה. בדקו את החיבור ונסו שוב.' : 'אין לך הרשאה ליצור טיול, או שההרשאה פגה. בקשו מהמארגן הרשאה חדשה.'; return; }
         await addMyTrip(id, name);
         closeModal(); S.pendingTab='share'; location.hash='trip-'+id; toast('הטיול נוצר! עכשיו שלחו לחברים');
       }
@@ -838,7 +912,9 @@ function expenseForm(exp){
 document.addEventListener('click', async e=>{
   const a=e.target.closest('[data-act]'); if(!a || !$('#app').contains(a)) return;
   const act=a.dataset.act;
-  if(act==='newTrip') tripForm(null);
+  if(act==='newTrip'){ if(canCreate()) tripForm(null); else organizerForm(); }
+  else if(act==='grant') grantForm();
+  else if(act==='revoke') revokeInvite(a.dataset.code);
   else if(act==='forgetTrip'){ const id=S.tripId; if(id) removeMyTrip(id); }
   else if(act==='tab'){ e.preventDefault(); S.tab=a.dataset.tab; render(); window.scrollTo(0,0); }
   else if(act==='setMe'){ lsSet('me-'+S.tripId, a.dataset.id); render(); }
@@ -898,7 +974,10 @@ async function makeDb(){
     onSnapshot:(n,er)=>F.onSnapshot(r,{includeMetadataChanges:true},s=>n(wrap(s)),e=>er&&er(code(e))) }; };
   const collection=path=>{ const c=F.collection(fs,path); return {
     onSnapshot:(n,er)=>F.onSnapshot(c,{includeMetadataChanges:true},s=>n({docs:s.docs.map(wrap), metadata:{fromCache:s.metadata.fromCache}}),e=>er&&er(code(e))) }; };
-  return {doc, collection};
+  const createTrip=async(id,data,cc)=>{ const b=F.writeBatch(fs); b.set(F.doc(fs,'trips/'+id),data); b.set(F.doc(fs,'creators/'+id),{code:cc}); try{ await b.commit(); }catch(e){ throw code(e); } };
+  const writeInvite=(inv,d)=>F.setDoc(F.doc(fs,'invites/'+inv),{master:d.master, name:d.name, expiresAt:F.Timestamp.fromMillis(d.expiresAt)}).catch(e=>{ throw code(e); });
+  const checkMaster=async(m)=>{ try{ await F.setDoc(F.doc(fs,'invites/chk'+inviteCode()),{master:m,name:'check',expiresAt:F.Timestamp.fromMillis(Date.now()-1000)}); return true; }catch(e){ return false; } };
+  return {doc, collection, createTrip, writeInvite, checkMaster};
 }
 render();
 (async()=>{
