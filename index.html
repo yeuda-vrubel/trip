@@ -200,6 +200,7 @@ bdi{unicode-bidi:isolate}
 .payrow b{font-size:18px;direction:ltr;unicode-bidi:isolate}
 .rcpt{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .rcpt img{width:72px;height:72px;object-fit:cover;border-radius:12px;border:1px solid var(--line-2);cursor:zoom-in;background:var(--paper-2)}
+.rcpt-link{display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper);color:var(--teal-ink);font-size:12px;font-weight:600;cursor:pointer;min-height:28px}
 .rcpt-ico{display:inline-flex;vertical-align:-2px;color:var(--muted);margin-inline-start:4px}
 .viewer{position:fixed;inset:0;z-index:50;background:rgba(5,10,20,.92);display:flex;align-items:center;justify-content:center;padding:16px}
 .viewer img{max-width:100%;max-height:100%;border-radius:8px}
@@ -213,7 +214,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "15";
+const APP_VERSION = "16";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -590,7 +591,7 @@ function expRow(e){
   const cat=CATS.find(c=>c[0]===e.cat)||CATS[5], cs=CAT_STYLE[cat[0]]||CAT_STYLE.other;
   const n=(e.splitAmong||[]).length, all=n===t.participants.length;
   return `<div class="exp" data-act="editExp" data-id="${esc(e.id)}"><span class="ico" style="background:${cs[0]};color:${cs[1]}">${ico(cat[0])}</span>
-    <span class="mid"><b>${esc(e.desc||cat[2])}${e.hasReceipt?`<span class="rcpt-ico" title="יש חשבונית"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="יש חשבונית" role="img"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg></span>`:''}</b><small>${esc(pName(e.payer))} שילם/ה · ${all?'כולם':n+' אנשים'}</small></span>
+    <span class="mid"><b>${esc(e.desc||cat[2])}</b><small>${esc(pName(e.payer))} שילם/ה · ${all?'כולם':n+' אנשים'}</small>${e.hasReceipt?`<button type="button" class="rcpt-link" data-act="viewRcpt" data-id="${esc(e.id)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg> חשבונית</button>`:''}</span>
     <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span></div>`;
 }
 
@@ -1039,8 +1040,10 @@ function expenseForm(exp){
     `<div class="field"><span class="lbl"><span>מתחלק בין · <a href="#" id="eAll" style="color:var(--teal);text-decoration:underline">כולם</a></span><span id="eEach" style="color:var(--teal-ink)"></span></span><div class="chips" id="eSplit">${P.map(p=>`<button type="button" class="chip ${st.splitAmong.includes(p.id)?'on':''}" data-v="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>`}
     ${isTransfer?'':`<div class="field"><span class="lbl">חשבונית (לא חובה)</span>
       <div class="rcpt"><span id="rcptPrev"></span>
-        <label class="btn sm" for="rcptInp" id="rcptAdd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> צילום חשבונית</label>
+        <label class="btn sm dark" for="rcptCam" id="rcptAdd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> צילום</label>
+        <label class="btn sm" for="rcptInp" id="rcptGal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg> מהגלריה</label>
         <button type="button" class="btn sm danger" id="rcptDel" style="display:none">הסרה</button>
+        <input type="file" id="rcptCam" accept="image/*" capture="environment" class="sr" tabindex="-1">
         <input type="file" id="rcptInp" accept="image/*" class="sr" tabindex="-1"></div>
       <div class="hint" id="rcptHint"></div></div>`}
     <div class="field"><label for="eDate">תאריך</label><input class="inp" type="date" id="eDate" value="${esc(st.date)}"></div>
@@ -1118,12 +1121,13 @@ function expenseForm(exp){
 function setupReceipt(q, t, exp, R){
   if(!q('#rcptInp')) return;
   const prev=q('#rcptPrev'), del=q('#rcptDel'), add=q('#rcptAdd'), hint=q('#rcptHint');
-  const show=src=>{ prev.innerHTML = src ? `<img alt="חשבונית" src="${src}">` : ''; del.style.display = src ? '' : 'none'; add.lastChild.textContent = src ? ' החלפה' : ' צילום חשבונית';
+  const show=src=>{ prev.innerHTML = src ? `<img alt="חשבונית" src="${src}">` : ''; del.style.display = src ? '' : 'none';
     const im=prev.querySelector('img'); if(im) im.onclick=()=>openViewer(src); };
   if(exp && exp.hasReceipt){ hint.textContent='טוען…'; rcptRef(t.id,exp.id).get().then(d=>{ hint.textContent=''; if(d.exists){ R.orig=d.data().img; if(R.img===undefined) show(R.orig); } }).catch(()=>{ hint.textContent='לא הצלחתי לטעון את החשבונית'; }); }
-  q('#rcptInp').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  const pick=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
     hint.textContent='מכין את התמונה…';
     try{ R.img=await shrinkImage(f); show(R.img); hint.textContent=''; }catch(err){ hint.textContent='לא הצלחתי לקרוא את התמונה. נסו תמונה אחרת.'; } };
+  q('#rcptInp').onchange=pick; q('#rcptCam').onchange=pick;
   del.onclick=()=>{ R.img=null; show(''); };
 }
 function shrinkImage(file){
@@ -1146,6 +1150,8 @@ document.addEventListener('click', async e=>{
   const act=a.dataset.act;
   if(act==='newTrip'){ if(canCreate()) tripForm(null); else organizerForm(); }
   else if(act==='grant') grantForm();
+  else if(act==='viewRcpt'){ const id=a.dataset.id; toast('טוען את החשבונית…');
+    try{ const d=await rcptRef(S.tripId,id).get(); if(d.exists) openViewer(d.data().img); else toast('החשבונית לא נמצאה'); }catch(err){ toast('לא הצלחתי לטעון את החשבונית'); } }
   else if(act==='payInfo'){ const x=(S._xs||[])[+a.dataset.i]; if(x) payForm(x); }
   else if(act==='addFlight') flightForm(null);
   else if(act==='editFlight'){ const f=(S.trip.flights||[]).find(x=>x.id===a.dataset.id); if(f) flightForm(f); }
