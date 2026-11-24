@@ -198,6 +198,12 @@ bdi{unicode-bidi:isolate}
 .payrow .mid{flex:1;min-width:0}
 .payrow small{display:block;color:var(--muted);font-size:12px}
 .payrow b{font-size:18px;direction:ltr;unicode-bidi:isolate}
+.rcpt{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rcpt img{width:72px;height:72px;object-fit:cover;border-radius:12px;border:1px solid var(--line-2);cursor:zoom-in;background:var(--paper-2)}
+.rcpt-ico{display:inline-flex;vertical-align:-2px;color:var(--muted);margin-inline-start:4px}
+.viewer{position:fixed;inset:0;z-index:50;background:rgba(5,10,20,.92);display:flex;align-items:center;justify-content:center;padding:16px}
+.viewer img{max-width:100%;max-height:100%;border-radius:8px}
+.viewer button{position:absolute;top:16px;left:16px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.15);color:#fff;font-size:22px;cursor:pointer}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -207,7 +213,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "14";
+const APP_VERSION = "15";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -275,6 +281,7 @@ function onWriteError(e){
 const tripRef = id => db.doc('trips/'+id);
 const expCol  = id => db.collection('trips/'+id+'/expenses');
 const expRef  = (id,eid) => db.doc('trips/'+id+'/expenses/'+eid);
+const rcptRef = (id,eid) => db.doc('trips/'+id+'/receipts/'+eid);
 function secretId(){ const a=new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a,b=>(b%36).toString(36)).join(''); }
 let uid=null, myIdxRef=null, myIdxWritable=true;
 function localTrips(){ try{ return JSON.parse(lsGet('mytrips')||'{}')||{}; }catch(e){ return {}; } }
@@ -583,7 +590,7 @@ function expRow(e){
   const cat=CATS.find(c=>c[0]===e.cat)||CATS[5], cs=CAT_STYLE[cat[0]]||CAT_STYLE.other;
   const n=(e.splitAmong||[]).length, all=n===t.participants.length;
   return `<div class="exp" data-act="editExp" data-id="${esc(e.id)}"><span class="ico" style="background:${cs[0]};color:${cs[1]}">${ico(cat[0])}</span>
-    <span class="mid"><b>${esc(e.desc||cat[2])}</b><small>${esc(pName(e.payer))} שילם/ה · ${all?'כולם':n+' אנשים'}</small></span>
+    <span class="mid"><b>${esc(e.desc||cat[2])}${e.hasReceipt?`<span class="rcpt-ico" title="יש חשבונית"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="יש חשבונית" role="img"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg></span>`:''}</b><small>${esc(pName(e.payer))} שילם/ה · ${all?'כולם':n+' אנשים'}</small></span>
     <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span></div>`;
 }
 
@@ -623,10 +630,10 @@ async function exportExcel(){
   const catName=k=>(CATS.find(x=>x[0]===k)||CATS[5])[2];
   const inBase = t.base==='ILS' ? 'סכום בשקלים' : 'סכום ב-'+t.base;
   const exps=[...S.expenses].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.createdAt||0)-(b.createdAt||0));
-  const rows1=[['תאריך','תיאור','קטגוריה','מי שילם','סכום','מטבע','שער',inBase,'מתחלק בין']];
+  const rows1=[['תאריך','תיאור','קטגוריה','מי שילם','סכום','מטבע','שער',inBase,'מתחלק בין','חשבונית']];
   for(const e of exps){ const r=rateOf(e.currency);
     if(e.kind==='transfer') rows1.push([e.date||'','החזר: '+pName(e.payer)+' ← '+pName(e.to)+(e.method?' ('+methodName(e.method)+')':''),'החזר',pName(e.payer),Number(e.amount)||0,e.currency,r||'',r?r2(e.amount*r):'',pName(e.to)]);
-    else rows1.push([e.date||'',e.desc||catName(e.cat),catName(e.cat),pName(e.payer),Number(e.amount)||0,e.currency,r||'',r?r2(e.amount*r):'',(e.splitAmong||[]).length===t.participants.length?'כולם':(e.splitAmong||[]).map(pName).join(', ')]); }
+    else rows1.push([e.date||'',e.desc||catName(e.cat),catName(e.cat),pName(e.payer),Number(e.amount)||0,e.currency,r||'',r?r2(e.amount*r):'',(e.splitAmong||[]).length===t.participants.length?'כולם':(e.splitAmong||[]).map(pName).join(', '),e.hasReceipt?'יש':'']); }
   const rows2=[['משתתף','טלפון','שילם','החלק שלו','יתרה','מצב']];
   for(const p of t.participants){ const b=r2(c.bal[p.id]); rows2.push([p.name,p.phone||'',r2(c.paid[p.id]),r2(c.share[p.id]),b,b<-0.009?'צריך להביא':b>0.009?'מקבל':'מאוזן']); }
   rows2.push([],['סה״כ הוצאות הטיול','',r2(c.total)]);
@@ -1030,6 +1037,12 @@ function expenseForm(exp){
     ${isTransfer?`<div class="field"><span class="lbl">איך שולם?</span><div class="chips" id="eMethod">${PAY_METHODS.map(([k,l])=>`<button type="button" class="chip ${st.method===k?'on':''}" data-v="${k}">${l}</button>`).join('')}</div></div>`:''}
     ${isTransfer?`<div class="field"><span class="lbl">למי?</span><div class="ppl" id="eTo">${P.map(p=>`<button type="button" class="pchip ${st.to===p.id?'on':''}" data-v="${esc(p.id)}">${avatar(p.id)}${esc(p.name)}</button>`).join('')}</div></div>`:
     `<div class="field"><span class="lbl"><span>מתחלק בין · <a href="#" id="eAll" style="color:var(--teal);text-decoration:underline">כולם</a></span><span id="eEach" style="color:var(--teal-ink)"></span></span><div class="chips" id="eSplit">${P.map(p=>`<button type="button" class="chip ${st.splitAmong.includes(p.id)?'on':''}" data-v="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>`}
+    ${isTransfer?'':`<div class="field"><span class="lbl">חשבונית (לא חובה)</span>
+      <div class="rcpt"><span id="rcptPrev"></span>
+        <label class="btn sm" for="rcptInp" id="rcptAdd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> צילום חשבונית</label>
+        <button type="button" class="btn sm danger" id="rcptDel" style="display:none">הסרה</button>
+        <input type="file" id="rcptInp" accept="image/*" class="sr" tabindex="-1"></div>
+      <div class="hint" id="rcptHint"></div></div>`}
     <div class="field"><label for="eDate">תאריך</label><input class="inp" type="date" id="eDate" value="${esc(st.date)}"></div>
     <div class="err" id="eErr"></div>
     <div class="actions" id="eActions"><button class="btn primary" id="eSave">${canWrite?(exp?'שמירת השינויים':'שמירת ההוצאה'):'שליחה בוואטסאפ'}</button><button class="btn" id="eCancel">ביטול</button></div>
@@ -1059,12 +1072,13 @@ function expenseForm(exp){
       q('#eSplit').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',!all)); update(); });
   }
   update();
+  const R={}; setupReceipt(q, t, exp, R);
   q('#eCancel').onclick=closeModal;
   if(q('#eDel')){
     q('#eDel').onclick=async()=>{
       const what = isTransfer ? 'ההחזר' : `"${exp.desc||'ההוצאה'}"`;
       if(!(await confirmDialog('למחוק את ההוצאה?', `${what} – ${fmtTxt(Number(exp.amount)||0, exp.currency)}. אי אפשר לבטל.`))) return;
-      try{ await expRef(t.id,exp.id).delete(); closeModal(); toast('נמחק'); }catch(e){ onWriteError(e); } };
+      try{ await expRef(t.id,exp.id).delete(); if(exp.hasReceipt) rcptRef(t.id,exp.id).delete().catch(()=>{}); closeModal(); toast('נמחק'); }catch(e){ onWriteError(e); } };
   }
   q('#eSave').onclick=async(ev)=>{
     const err=q('#eErr'); err.textContent='';
@@ -1091,13 +1105,40 @@ function expenseForm(exp){
         : {desc, amount:a, currency:st.currency, payer:st.payer, cat:st.cat, splitAmong:st.splitAmong, date};
       body.createdAt = exp?.createdAt || Date.now(); body.updatedAt = Date.now();
       const id = exp ? exp.id : rid('e');
+      if(!isTransfer){ const keep = R.img===undefined ? !!(exp&&exp.hasReceipt) : !!R.img; if(keep) body.hasReceipt=true; }
+      if(R.img){ try{ await rcptRef(t.id,id).set({img:R.img, at:Date.now()}); }catch(err){ ev.target.disabled=false; q('#eErr').textContent='שמירת החשבונית נכשלה. ודאו שהכללים ב-Firebase עודכנו.'; return; } }
       await expRef(t.id,id).set(body);
+      if(R.img===null && exp && exp.hasReceipt){ rcptRef(t.id,id).delete().catch(()=>{}); }
       if(!me) lsSet('me-'+t.id, st.payer);
       closeModal(); toast(exp?'עודכן':'ההוצאה נוספה');
     }catch(e){ ev.target.disabled=false; onWriteError(e); }
   };
   if(!exp) setTimeout(()=>q('#eAmt').focus(),50);
 }
+function setupReceipt(q, t, exp, R){
+  if(!q('#rcptInp')) return;
+  const prev=q('#rcptPrev'), del=q('#rcptDel'), add=q('#rcptAdd'), hint=q('#rcptHint');
+  const show=src=>{ prev.innerHTML = src ? `<img alt="חשבונית" src="${src}">` : ''; del.style.display = src ? '' : 'none'; add.lastChild.textContent = src ? ' החלפה' : ' צילום חשבונית';
+    const im=prev.querySelector('img'); if(im) im.onclick=()=>openViewer(src); };
+  if(exp && exp.hasReceipt){ hint.textContent='טוען…'; rcptRef(t.id,exp.id).get().then(d=>{ hint.textContent=''; if(d.exists){ R.orig=d.data().img; if(R.img===undefined) show(R.orig); } }).catch(()=>{ hint.textContent='לא הצלחתי לטעון את החשבונית'; }); }
+  q('#rcptInp').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
+    hint.textContent='מכין את התמונה…';
+    try{ R.img=await shrinkImage(f); show(R.img); hint.textContent=''; }catch(err){ hint.textContent='לא הצלחתי לקרוא את התמונה. נסו תמונה אחרת.'; } };
+  del.onclick=()=>{ R.img=null; show(''); };
+}
+function shrinkImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), im=new Image();
+    im.onload=()=>{ URL.revokeObjectURL(url);
+      let max=1400, q=0.7, out='';
+      for(let i=0;i<6;i++){ const k=Math.min(1, max/Math.max(im.width,im.height)); const c=document.createElement('canvas'); c.width=Math.round(im.width*k); c.height=Math.round(im.height*k);
+        c.getContext('2d').drawImage(im,0,0,c.width,c.height); out=c.toDataURL('image/jpeg',q); if(out.length<650000) break; max=Math.round(max*0.8); q=Math.max(0.45,q-0.08); }
+      out.length<900000 ? res(out) : rej(new Error('too big')); };
+    im.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    im.src=url;
+  });
+}
+function openViewer(src){ const v=document.createElement('div'); v.className='viewer'; v.innerHTML=`<img alt="חשבונית"><button type="button" aria-label="סגירה">✕</button>`; v.querySelector('img').src=src; v.onclick=()=>v.remove(); document.body.appendChild(v); }
 
 /* ---------- events ---------- */
 document.addEventListener('click', async e=>{
