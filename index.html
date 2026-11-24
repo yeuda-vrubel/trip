@@ -412,7 +412,7 @@ function adminPanel(){
   const inv=myInvites().slice(0,20);
   return `<div class="sec-h"><h3>הרשאות ליצירת טיולים</h3><button class="btn sm dark" data-act="grant">${ico('plus',16,2.5)} מתן הרשאה</button></div>
   ${inv.length?`<div class="card" style="padding-bottom:4px">${inv.map(x=>{ const live=x.exp>Date.now();
-    return `<div class="xfer"><span class="mid"><b>${esc(x.name)}</b><br><small class="muted">${live?'בתוקף, '+esc(untilTxt(x.exp)):'בוטל או פג תוקף'}</small></span>${live?`<button class="btn sm soft" data-act="revoke" data-code="${esc(x.code)}">ביטול</button>`:''}</div>`;}).join('')}</div>`
+    return `<div class="xfer"><span class="mid"><b>${esc(x.name)}</b><br><small class="muted">${live?'בתוקף, '+esc(untilTxt(x.exp)):'בוטל או פג תוקף'}</small></span>${live?`<button class="btn sm soft" data-act="revoke" data-code="${esc(x.code)}">ביטול</button>`:`<button class="btn sm danger" data-act="forgetInvite" data-code="${esc(x.code)}">מחיקה</button>`}</div>`;}).join('')}</div>`
   : `<div class="hint" style="margin:0 4px">רק את/ה יכול/ה ליצור טיולים. כדי שמישהו אחר יוכל, לחצו "מתן הרשאה".</div>`}`;
 }
 
@@ -923,6 +923,7 @@ document.addEventListener('click', async e=>{
   if(act==='newTrip'){ if(canCreate()) tripForm(null); else organizerForm(); }
   else if(act==='grant') grantForm();
   else if(act==='revoke') revokeInvite(a.dataset.code);
+  else if(act==='forgetInvite'){ setMyInvites(myInvites().filter(x=>x.code!==a.dataset.code)); render(); toast('ההרשאה נמחקה מהרשימה'); }
   else if(act==='forgetTrip'){ const id=S.tripId; if(id) removeMyTrip(id); }
   else if(act==='tab'){ e.preventDefault(); S.tab=a.dataset.tab; render(); window.scrollTo(0,0); }
   else if(act==='setMe'){ lsSet('me-'+S.tripId, a.dataset.id); render(); }
