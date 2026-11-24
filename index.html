@@ -179,6 +179,21 @@ bdi{unicode-bidi:isolate}
 .cfm .row .btn{flex:1;padding:14px}
 .btn.del{background:#B4361F;color:#fff;border-color:transparent;font-weight:700}
 @keyframes pop{from{transform:scale(.92);opacity:.5}}
+.tab{padding:10px 2px;font-size:14px}
+.flight{background:var(--card);border-radius:20px;overflow:hidden;margin-bottom:12px}
+.flight-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;background:var(--navy);color:var(--paper);font-size:14px}
+.flight-top b{font-size:15px}
+.flight-pill{background:var(--coral);color:var(--navy);border-radius:999px;padding:3px 10px;font-weight:700;font-size:12px}
+.route{display:flex;align-items:center;gap:10px;padding:16px 16px 6px;direction:ltr}
+.route .pt{flex:1;min-width:0}
+.route .pt.end{text-align:right}
+.route .code{font-size:28px;font-weight:800;letter-spacing:.5px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.route .time{font-size:15px;font-weight:600;color:var(--muted)}
+.route .mid{flex:none;color:var(--coral);display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;color:var(--muted)}
+.flight-info{display:flex;flex-wrap:wrap;gap:6px 16px;padding:6px 16px 12px;font-size:13px;color:var(--muted)}
+.flight-info b{color:var(--ink);font-weight:600}
+.flight-act{display:flex;gap:8px;padding:10px 16px 14px;border-top:2px dashed var(--line-2)}
+.flight-act .btn{flex:1}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -188,7 +203,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "11";
+const APP_VERSION = "12";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -511,11 +526,12 @@ function renderTrip(){
     </form></main>`;
   S.gateErr='';
   const me=getMe(), c=compute(), dates=tripDates();
-  const tabs=[['expenses','הוצאות'],['balance','סיכום'],['share','שיתוף'],['settings','הגדרות']];
+  const tabs=[['expenses','הוצאות'],['balance','סיכום'],['flights','טיסות'],['share','שיתוף'],['settings','הגדרות']];
   let body='';
   if(S.tab==='expenses') body=tabExpenses(me,c);
   else if(S.tab==='balance') body=tabBalance(me,c);
   else if(S.tab==='share') body=tabShare();
+  else if(S.tab==='flights') body=tabFlights();
   else body=tabSettings();
   const usedCurs=[...new Set(S.expenses.map(e=>e.currency))].filter(x=>x!==t.base && boiRate(x));
   const rateCurs=(usedCurs.length?usedCurs:['USD','EUR']).filter(x=>boiRate(x)).slice(0,3);
@@ -621,6 +637,9 @@ async function exportExcel(){
   X.utils.book_append_sheet(wb,sheet(rows3,[16,16,14]),'מי משלם למי');
   X.utils.book_append_sheet(wb,sheet(rows1,[12,28,12,14,10,8,9,12,28]),'הוצאות');
   X.utils.book_append_sheet(wb,sheet(rows4,[8,12,9,14,20]),'לפי מטבע');
+  const fl=flightsList(); if(fl.length){ const rows5=[['כיוון','חברה','מספר טיסה','מ-','אל','תאריך','המראה','נחיתה','טרמינל','נוסעים','הערות']];
+    fl.forEach(f=>rows5.push([f.dir||'',f.airline||'',f.number||'',f.from||'',f.to||'',f.date||'',f.dep||'',(f.arr||'')+(f.arrNext?' (+1)':''),f.terminal||'',(f.who||[]).length===t.participants.length?'כולם':(f.who||[]).map(pName).join(', '),f.note||'']));
+    X.utils.book_append_sheet(wb,sheet(rows5,[8,14,11,8,8,11,8,10,8,22,26]),'טיסות'); }
   const safe=(t.name||'טיול').replace(/[\\/:*?"<>|]/g,'').trim()||'טיול';
   X.writeFile(wb, safe+' - דוח הוצאות.xlsx');
 }
@@ -632,6 +651,69 @@ function summaryText(c,xs){
   return s;
 }
 
+function flightsList(){ return [...(S.trip.flights||[])].sort((a,b)=>((a.date||'')+(a.dep||'')).localeCompare((b.date||'')+(b.dep||''))); }
+function fDate(d){ if(!d) return ''; try{ const [y,m,dd]=d.split('-').map(Number); return new Date(y,m-1,dd).toLocaleDateString('he-IL',{weekday:'short',day:'numeric',month:'long'}); }catch(e){ return d; } }
+function tabFlights(){
+  const t=S.trip, fl=flightsList(), all=t.participants.length;
+  const planeSvg=`<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" transform="rotate(90 12 12)"/></svg>`;
+  let html=`<div class="sec-h"><h3>טיסות</h3>${canWrite?`<button class="btn sm dark" data-act="addFlight">${ico('plus',16,2.5)} הוספת טיסה</button>`:''}</div>`;
+  if(!fl.length) return html+`<div class="empty"><div class="big-ico">${ico('plane',28)}</div>עוד אין טיסות.<br>הוסיפו את טיסות הלוך וחזור כדי שלכולם יהיו הפרטים במקום אחד.</div>`;
+  html+=fl.map(f=>{ const who=(f.who||[]).filter(id=>t.participants.some(p=>p.id===id));
+    const q=encodeURIComponent((f.number||'')+' flight status');
+    return `<div class="flight">
+      <div class="flight-top"><span><b>${esc(f.airline||'טיסה')}</b>${f.number?' · <bdi>'+esc(f.number)+'</bdi>':''}</span>${f.dir?`<span class="flight-pill">${esc(f.dir)}</span>`:''}</div>
+      <div class="route">
+        <div class="pt"><div class="code">${esc(f.from||'—')}</div><div class="time">${esc(f.dep||'')}</div></div>
+        <div class="mid">${planeSvg}<span>${esc(fDate(f.date))}</span></div>
+        <div class="pt end"><div class="code">${esc(f.to||'—')}</div><div class="time">${esc(f.arr||'')}${f.arrNext?' <small>(+1)</small>':''}</div></div>
+      </div>
+      <div class="flight-info" dir="rtl">
+        ${f.terminal?`<span>טרמינל <b>${esc(f.terminal)}</b></span>`:''}
+        <span>נוסעים: <b>${!who.length||who.length===all?'כולם':who.map(id=>esc(pName(id))).join(', ')}</b></span>
+        ${f.note?`<span style="flex-basis:100%">${esc(f.note)}</span>`:''}
+      </div>
+      <div class="flight-act">
+        ${f.number?`<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}">סטטוס טיסה</a>`:''}
+        ${canWrite?`<button class="btn sm" data-act="editFlight" data-id="${esc(f.id)}">עריכה</button><button class="btn sm danger" data-act="delFlight" data-id="${esc(f.id)}">מחיקה</button>`:''}
+      </div></div>`; }).join('');
+  return html;
+}
+async function saveFlights(list){ try{ await tripRef(S.tripId).update({flights:list}); return true; }catch(e){ onWriteError(e); return false; } }
+function flightForm(f){
+  const t=S.trip, P=t.participants, isNew=!f;
+  const st=f?{...f, who:[...(f.who||[])]}:{id:rid('f'),dir:(S.trip.flights||[]).length?'חזור':'הלוך',airline:'',number:'',from:'',to:'',date:'',dep:'',arr:'',arrNext:false,terminal:'',note:'',who:P.map(p=>p.id)};
+  const dirs=['הלוך','חזור','פנימית'];
+  const el=openModal(`<h3>${isNew?'טיסה חדשה':'עריכת טיסה'}</h3>
+    <div class="field"><span class="lbl">כיוון</span><div class="chips" id="fDir">${dirs.map(d=>`<button type="button" class="chip ${st.dir===d?'on':''}" data-v="${d}">${d}</button>`).join('')}</div></div>
+    <div class="row field"><div style="flex:1.3"><label for="fAir" class="lbl">חברת תעופה</label><input class="inp" id="fAir" placeholder="אל על" value="${esc(st.airline)}"></div>
+      <div style="flex:1"><label for="fNum" class="lbl">מספר טיסה</label><input class="inp" id="fNum" placeholder="LY081" autocapitalize="characters" value="${esc(st.number)}" style="direction:ltr;text-align:left"></div></div>
+    <div class="row field"><div style="flex:1"><label for="fFrom" class="lbl">מ־</label><input class="inp" id="fFrom" placeholder="TLV" value="${esc(st.from)}"></div>
+      <div style="flex:1"><label for="fTo" class="lbl">אל</label><input class="inp" id="fTo" placeholder="BKK" value="${esc(st.to)}"></div></div>
+    <div class="field"><label for="fDate" class="lbl">תאריך</label><input class="inp" type="date" id="fDate" value="${esc(st.date)}"></div>
+    <div class="row field"><div style="flex:1"><label for="fDep" class="lbl">המראה</label><input class="inp" type="time" id="fDep" value="${esc(st.dep)}"></div>
+      <div style="flex:1"><label for="fArr" class="lbl">נחיתה</label><input class="inp" type="time" id="fArr" value="${esc(st.arr)}"></div></div>
+    <div class="field"><label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink);font-weight:500"><input type="checkbox" id="fNext" ${st.arrNext?'checked':''} style="width:20px;height:20px"> הנחיתה ביום שאחרי</label></div>
+    <div class="field"><label for="fTerm" class="lbl">טרמינל (לא חובה)</label><input class="inp" id="fTerm" placeholder="3" value="${esc(st.terminal)}"></div>
+    <div class="field"><span class="lbl"><span>מי טס?</span><a href="#" id="fAll" style="color:var(--teal);text-decoration:underline">כולם</a></span><div class="chips" id="fWho">${P.map(p=>`<button type="button" class="chip ${st.who.includes(p.id)?'on':''}" data-v="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>
+    <div class="field"><label for="fNote" class="lbl">הערות (לא חובה)</label><input class="inp" id="fNote" placeholder="כבודה 23 ק״ג, להגיע 3 שעות לפני" value="${esc(st.note)}">
+      <div class="hint">לא לכתוב כאן קוד הזמנה (PNR) או פרטי דרכון. כל מי שיש לו את הקישור לטיול רואה את הפרטים.</div></div>
+    <div class="err" id="fErr"></div>
+    <div class="actions"><button class="btn primary" id="fSave">${isNew?'הוספת הטיסה':'שמירה'}</button><button class="btn" id="fCancel">ביטול</button></div>`);
+  const q=s=>el.querySelector(s);
+  q('#fDir').onclick=e=>{ const b=e.target.closest('.chip'); if(!b) return; st.dir=b.dataset.v; q('#fDir').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c===b)); };
+  q('#fWho').onclick=e=>{ const b=e.target.closest('.chip'); if(!b) return; const id=b.dataset.v; st.who=st.who.includes(id)?st.who.filter(x=>x!==id):[...st.who,id]; b.classList.toggle('on'); };
+  q('#fAll').onclick=e=>{ e.preventDefault(); const all=st.who.length===P.length; st.who=all?[]:P.map(p=>p.id); q('#fWho').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',!all)); };
+  q('#fCancel').onclick=closeModal;
+  q('#fSave').onclick=async ev=>{
+    const v=id=>q(id).value.trim();
+    Object.assign(st,{airline:v('#fAir'),number:v('#fNum').toUpperCase().replace(/\s+/g,''),from:v('#fFrom').toUpperCase(),to:v('#fTo').toUpperCase(),date:q('#fDate').value,dep:q('#fDep').value,arr:q('#fArr').value,arrNext:q('#fNext').checked,terminal:v('#fTerm'),note:v('#fNote')});
+    if(!st.number && !st.from && !st.to) return q('#fErr').textContent='מלאו לפחות מספר טיסה או מאיפה ולאן';
+    if(!st.date) return q('#fErr').textContent='בחרו תאריך';
+    ev.target.disabled=true;
+    const list=(S.trip.flights||[]).filter(x=>x.id!==st.id).concat([st]);
+    if(await saveFlights(list)){ closeModal(); toast(isNew?'הטיסה נוספה':'נשמר'); } else ev.target.disabled=false;
+  };
+}
 function tabShare(){
   const t=S.trip, link=tripLink(t.id);
   const msg=(name)=>`היי ${name}! 👋\nפתחתי את "${t.name}" לניהול ההוצאות של הטיול. כנסו לקישור, הקלידו את מספר הטלפון שלכם, ורשמו כל הוצאה ששילמתם:\n${link}`;
@@ -975,6 +1057,10 @@ document.addEventListener('click', async e=>{
   const act=a.dataset.act;
   if(act==='newTrip'){ if(canCreate()) tripForm(null); else organizerForm(); }
   else if(act==='grant') grantForm();
+  else if(act==='addFlight') flightForm(null);
+  else if(act==='editFlight'){ const f=(S.trip.flights||[]).find(x=>x.id===a.dataset.id); if(f) flightForm(f); }
+  else if(act==='delFlight'){ const f=(S.trip.flights||[]).find(x=>x.id===a.dataset.id); if(!f) return;
+    if(await confirmDialog('למחוק את הטיסה?', `${[f.airline,f.number].filter(Boolean).join(' ')} ${f.from||''}→${f.to||''}, ${fDate(f.date)}`.trim())){ if(await saveFlights((S.trip.flights||[]).filter(x=>x.id!==f.id))) toast('הטיסה נמחקה'); } }
   else if(act==='revoke'){ const inv=myInvites().find(x=>x.code===a.dataset.code); if(await confirmDialog('לבטל את ההרשאה?', `${inv?inv.name:''} לא יוכל/תוכל יותר ליצור טיולים חדשים.`, 'כן, לבטל')) revokeInvite(a.dataset.code); }
   else if(act==='excel'){ a.disabled=true; exportExcel().catch(err=>{ console.error(err); toast('יצירת הדוח נכשלה, נסו שוב'); }).finally(()=>{ a.disabled=false; }); }
   else if(act==='forgetInvite'){ setMyInvites(myInvites().filter(x=>x.code!==a.dataset.code)); render(); toast('ההרשאה נמחקה מהרשימה'); }
