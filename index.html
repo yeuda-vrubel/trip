@@ -200,6 +200,9 @@ bdi{unicode-bidi:isolate}
 .payrow b{font-size:18px;direction:ltr;unicode-bidi:isolate}
 .rcpt{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .rcpt img{width:72px;height:72px;object-fit:cover;border-radius:12px;border:1px solid var(--line-2);cursor:zoom-in;background:var(--paper-2)}
+.exp-btns{display:flex;gap:6px;flex:none;margin-inline-start:2px}
+.ibtn{width:36px;height:36px;border-radius:11px;border:1px solid var(--line-2);background:var(--paper);color:var(--navy);display:grid;place-items:center;cursor:pointer;padding:0}
+.ibtn.del{color:#B4361F}
 .rcpt-link{display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line-2);background:var(--paper);color:var(--teal-ink);font-size:12px;font-weight:600;cursor:pointer;min-height:28px}
 .rcpt-ico{display:inline-flex;vertical-align:-2px;color:var(--muted);margin-inline-start:4px}
 .viewer{position:fixed;inset:0;z-index:50;background:rgba(5,10,20,.92);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -214,7 +217,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "17";
+const APP_VERSION = "18";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -584,15 +587,49 @@ function expRow(e){
   const t=S.trip, r=rateOf(e.currency);
   const conv = (e.currency!==t.base && r) ? `<small>≈ ${fmt(e.amount*r,t.base)}</small>` : (e.currency!==t.base?'<small>אין שער</small>':'');
   if(e.kind==='transfer'){
-    return `<div class="exp" data-act="editExp" data-id="${esc(e.id)}"><span class="ico" style="background:#FCF0D2;color:#8A5A00">${ico('transfer')}</span>
+    return `<div class="exp" data-act="showExp" data-id="${esc(e.id)}"><span class="ico" style="background:#FCF0D2;color:#8A5A00">${ico('transfer')}</span>
       <span class="mid"><b>${esc(pName(e.payer))} ← ${esc(pName(e.to))}</b><small>החזר חוב${e.method?' · '+esc(methodName(e.method)):''}</small></span>
-      <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span></div>`;
+      <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span>${expBtns(e)}</div>`;
   }
   const cat=CATS.find(c=>c[0]===e.cat)||CATS[5], cs=CAT_STYLE[cat[0]]||CAT_STYLE.other;
   const n=(e.splitAmong||[]).length, all=n===t.participants.length;
-  return `<div class="exp" data-act="editExp" data-id="${esc(e.id)}"><span class="ico" style="background:${cs[0]};color:${cs[1]}">${ico(cat[0])}</span>
+  return `<div class="exp" data-act="showExp" data-id="${esc(e.id)}"><span class="ico" style="background:${cs[0]};color:${cs[1]}">${ico(cat[0])}</span>
     <span class="mid"><b>${esc(e.desc||cat[2])}</b><small>${esc(pName(e.payer))} שילם/ה · ${all?'כולם':n+' אנשים'}</small>${e.hasReceipt?`<button type="button" class="rcpt-link" data-act="viewRcpt" data-id="${esc(e.id)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg> חשבונית</button>`:''}</span>
-    <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span></div>`;
+    <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span>${expBtns(e)}</div>`;
+}
+function expBtns(e){
+  if(!canWrite) return '';
+  return `<span class="exp-btns"><button type="button" class="ibtn" data-act="editExp" data-id="${esc(e.id)}" aria-label="עריכה"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button type="button" class="ibtn del" data-act="delExp" data-id="${esc(e.id)}" aria-label="מחיקה"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></span>`;
+}
+async function deleteExpense(e){
+  const what = e.kind==='transfer' ? 'ההחזר' : `"${e.desc||'ההוצאה'}"`;
+  if(!(await confirmDialog('למחוק את ההוצאה?', `${what} – ${fmtTxt(Number(e.amount)||0, e.currency)}. אי אפשר לבטל.`))) return false;
+  try{ await expRef(S.tripId,e.id).delete(); if(e.hasReceipt) rcptRef(S.tripId,e.id).delete().catch(()=>{}); toast('נמחק'); return true; }
+  catch(err){ onWriteError(err); return false; }
+}
+function expenseDetails(e){
+  const t=S.trip, r=rateOf(e.currency), src=rateSrc(e.currency), isT=e.kind==='transfer';
+  const cat=CATS.find(c=>c[0]===e.cat)||CATS[5], cs=CAT_STYLE[cat[0]]||CAT_STYLE.other;
+  const among=(e.splitAmong||[]).filter(id=>t.participants.some(p=>p.id===id));
+  const each=among.length? (Number(e.amount)||0)/among.length : 0;
+  const row=(k,v)=>`<div class="crow" style="padding:9px 0;border-bottom:1px solid var(--line)"><span class="muted">${k}</span><span style="text-align:left">${v}</span></div>`;
+  const el=openModal(`<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <span class="ico" style="width:48px;height:48px;border-radius:14px;display:grid;place-items:center;flex:none;background:${isT?'#FCF0D2':cs[0]};color:${isT?'#8A5A00':cs[1]}">${ico(isT?'transfer':cat[0],22)}</span>
+      <div style="min-width:0"><h3 style="margin:0">${isT?esc(pName(e.payer))+' ← '+esc(pName(e.to)):esc(e.desc||cat[2])}</h3><small class="muted">${esc(fmtDay(e.date))}</small></div></div>
+    <div class="amount-box" style="text-align:center"><div style="font-size:34px;font-weight:800;letter-spacing:-.5px">${fmt(Number(e.amount)||0,e.currency)}</div>
+      ${e.currency!==t.base?`<div class="muted" style="font-size:14px">${r?`≈ ${fmt((Number(e.amount)||0)*r,t.base)} · ${src==='boi'?'שער יציג':src==='ecb'?'שער ECB':'שער ידני'} ${+r.toFixed(4)}`:'אין שער המרה'}</div>`:''}</div>
+    <div style="margin-bottom:14px">
+      ${isT? row('שילם/ה',esc(pName(e.payer)))+row('קיבל/ה',esc(pName(e.to)))+(e.method?row('איך שולם',esc(methodName(e.method))):'')
+        : row('קטגוריה',esc(cat[2]))+row('מי שילם',esc(pName(e.payer)))+row('מתחלק בין',among.length===t.participants.length?'כולם':among.map(id=>esc(pName(id))).join(', '))+row('לכל אחד',fmt(each,e.currency))}
+    </div>
+    ${e.hasReceipt?`<div class="field"><span class="lbl">חשבונית</span><div class="rcpt" id="dRcpt"><span class="hint" style="margin:0">טוען…</span></div></div>`:''}
+    <div class="actions">${canWrite?`<button class="btn" id="dEdit">עריכה</button><button class="btn danger" id="dDel">מחיקה</button>`:''}<button class="btn" id="dClose">סגירה</button></div>`);
+  el.querySelector('#dClose').onclick=closeModal;
+  if(canWrite){ el.querySelector('#dEdit').onclick=()=>{ closeModal(); expenseForm(e); };
+    el.querySelector('#dDel').onclick=async()=>{ if(await deleteExpense(e)) closeModal(); }; }
+  if(e.hasReceipt) rcptRef(S.tripId,e.id).get().then(d=>{ const box=el.querySelector('#dRcpt'); if(!box) return;
+    if(d.exists){ box.innerHTML='<img alt="חשבונית" style="width:110px;height:110px">'; const im=box.querySelector('img'); im.src=d.data().img; im.onclick=()=>openViewer(d.data().img); }
+    else box.innerHTML='<span class="hint" style="margin:0">החשבונית לא נמצאה</span>'; }).catch(()=>{});
 }
 
 function tabBalance(me,c){
@@ -1167,6 +1204,8 @@ document.addEventListener('click', async e=>{
   else if(act==='setMe'){ lsSet('me-'+S.tripId, a.dataset.id); render(); }
   else if(act==='addExp') expenseForm(null);
   else if(act==='editExp'){ const x=S.expenses.find(x=>x.id===a.dataset.id); if(x) expenseForm(x); }
+  else if(act==='showExp'){ const x=S.expenses.find(x=>x.id===a.dataset.id); if(x) expenseDetails(x); }
+  else if(act==='delExp'){ const x=S.expenses.find(x=>x.id===a.dataset.id); if(x) deleteExpense(x); }
   else if(act==='editTrip') tripForm(S.trip);
   else if(act==='copy'){ const v=$('#linkInp').value; try{ await navigator.clipboard.writeText(v); toast('הקישור הועתק'); }catch(_){ $('#linkInp').select(); toast('סמנו והעתיקו את הקישור'); } }
   else if(act==='markPaid'){
