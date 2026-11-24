@@ -214,7 +214,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "16";
+const APP_VERSION = "17";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -1109,8 +1109,10 @@ function expenseForm(exp){
       body.createdAt = exp?.createdAt || Date.now(); body.updatedAt = Date.now();
       const id = exp ? exp.id : rid('e');
       if(!isTransfer){ const keep = R.img===undefined ? !!(exp&&exp.hasReceipt) : !!R.img; if(keep) body.hasReceipt=true; }
-      if(R.img){ try{ await rcptRef(t.id,id).set({img:R.img, at:Date.now()}); }catch(err){ ev.target.disabled=false; q('#eErr').textContent='שמירת החשבונית נכשלה. ודאו שהכללים ב-Firebase עודכנו.'; return; } }
+      let rcptFailed=false;
+      if(R.img){ try{ await rcptRef(t.id,id).set({img:R.img, at:Date.now()}); }catch(err){ console.error(err); rcptFailed=true; if(!(exp&&exp.hasReceipt)) delete body.hasReceipt; } }
       await expRef(t.id,id).set(body);
+      if(rcptFailed){ if(!me) lsSet('me-'+t.id, st.payer); closeModal(); toast('ההוצאה נשמרה, אבל החשבונית לא. צריך לעדכן את הכללים ב-Firebase.'); return; }
       if(R.img===null && exp && exp.hasReceipt){ rcptRef(t.id,id).delete().catch(()=>{}); }
       if(!me) lsSet('me-'+t.id, st.payer);
       closeModal(); toast(exp?'עודכן':'ההוצאה נוספה');
