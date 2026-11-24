@@ -194,6 +194,10 @@ bdi{unicode-bidi:isolate}
 .flight-info b{color:var(--ink);font-weight:600}
 .flight-act{display:flex;gap:8px;padding:10px 16px 14px;border-top:2px dashed var(--line-2)}
 .flight-act .btn{flex:1}
+.payrow{display:flex;align-items:center;gap:10px;background:var(--card);border-radius:14px;padding:10px 12px;margin-bottom:8px}
+.payrow .mid{flex:1;min-width:0}
+.payrow small{display:block;color:var(--muted);font-size:12px}
+.payrow b{font-size:18px;direction:ltr;unicode-bidi:isolate}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -203,7 +207,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "12";
+const APP_VERSION = "13";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -593,7 +597,7 @@ function tabBalance(me,c){
     return `<div class="tile ${cls} ${p.id===me?'me':''}"><span>${esc(p.name)}${p.id===me?' (אני)':''} <em>${verb}</em></span><b>${fmt(Math.abs(b),t.base)}</b></div>`;}).join('')}</div>`;
   html+=`<div class="card" style="margin-top:14px"><div class="card-h">${xs.length?`${xs.length===1?'העברה אחת':xs.length+' העברות'} וסגרנו`:'אין העברות'}</div>
     ${xs.length? xs.map((x,i)=>`<div class="xfer"><span class="mid">${esc(pName(x.from))} <span class="arrow">←</span> ${esc(pName(x.to))}</span><b class="amt">${fmt(x.amt,t.base)}</b>
-      ${canWrite?`<button class="btn sm soft" data-act="markPaid" data-i="${i}">שולם</button>`:''}</div>`).join('')
+      <button class="btn sm primary" data-act="payInfo" data-i="${i}" style="box-shadow:none">תשלום</button>${canWrite?`<button class="btn sm soft" data-act="markPaid" data-i="${i}">שולם</button>`:''}</div>`).join('')
       : `<div class="xfer"><span class="mid muted">${S.expenses.length?'כולם מאוזנים, אף אחד לא חייב לאף אחד.':'עוד אין הוצאות לחישוב.'}</span></div>`}</div>`;
   const byCur={}; S.expenses.filter(e=>e.kind!=='transfer').forEach(e=>{ byCur[e.currency]=(byCur[e.currency]||0)+(Number(e.amount)||0); });
   const curKeys=Object.keys(byCur);
@@ -712,6 +716,33 @@ function flightForm(f){
     ev.target.disabled=true;
     const list=(S.trip.flights||[]).filter(x=>x.id!==st.id).concat([st]);
     if(await saveFlights(list)){ closeModal(); toast(isNew?'הטיסה נוספה':'נשמר'); } else ev.target.disabled=false;
+  };
+}
+function payForm(x){
+  const t=S.trip, to=t.participants.find(p=>p.id===x.to)||{}, from=t.participants.find(p=>p.id===x.from)||{};
+  const amt=x.amt.toFixed(2).replace(/\.00$/,'');
+  const link=(to.payLink||'').trim();
+  const remind=`היי ${from.name||''}! לפי חשבון הטיול "${t.name}" נשאר לך להעביר ל${to.name||''} ${fmtTxt(x.amt,t.base)}.`+(link?`\nאפשר לשלם כאן: ${link}`:to.phone?`\nבביט או בפייבוקס למספר ${to.phone}`:'')+`\nתודה!`;
+  const el=openModal(`<h3>${esc(from.name||'')} משלם/ת ל${esc(to.name||'')}</h3>
+    <div class="payrow"><span class="mid"><small>סכום להעברה</small><b>${fmt(x.amt,t.base)}</b></span><button type="button" class="btn sm" data-copy="${esc(amt)}">העתקה</button></div>
+    ${to.phone?`<div class="payrow"><span class="mid"><small>הטלפון של ${esc(to.name||'')} (לביט / לפייבוקס)</small><b>${esc(to.phone)}</b></span><button type="button" class="btn sm" data-copy="${esc(to.phone)}">העתקה</button></div>`:''}
+    ${link?`<a class="btn primary" style="width:100%;padding:15px;margin:6px 0 4px" target="_blank" rel="noopener" href="${esc(link)}">תשלום בקישור של ${esc(to.name||'')}</a>`:''}
+    <div class="hint" style="margin-bottom:14px">${link?'או: ':''}פותחים את ביט או פייבוקס, בוחרים את ${esc(to.name||'')} לפי מספר הטלפון ומדביקים את הסכום.</div>
+    <a class="btn wa" style="width:100%;padding:14px" target="_blank" rel="noopener" href="${esc(waLink(from.phone,remind))}">שליחת תזכורת ל${esc(from.name||'')} בוואטסאפ</a>
+    ${canWrite?`<div class="field" style="margin-top:20px"><label for="payLinkInp" class="lbl">קישור לקבלת תשלום של ${esc(to.name||'')} (לא חובה)</label>
+      <div class="row"><input class="inp" id="payLinkInp" inputmode="url" placeholder="קישור אישי מפייבוקס, ביט או PayPal" value="${esc(link)}" style="direction:ltr;text-align:left;flex:1"><button type="button" class="btn sm dark" id="paySave">שמירה</button></div>
+      <div class="hint">מדביקים קישור תשלום אישי, אם יש. מאז כל מי שצריך לשלם ל${esc(to.name||'')} יקבל כפתור תשלום ישיר.</div><div class="err" id="payErr"></div></div>`:''}
+    <div class="actions"><button class="btn" id="payClose">סגירה</button></div>`);
+  el.querySelector('#payClose').onclick=closeModal;
+  el.querySelectorAll('[data-copy]').forEach(b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(b.dataset.copy); toast('הועתק'); }catch(e){ toast(b.dataset.copy); } });
+  const save=el.querySelector('#paySave');
+  if(save) save.onclick=async()=>{
+    const v=el.querySelector('#payLinkInp').value.trim();
+    if(v && !/^https:\/\/\S+$/i.test(v)) return el.querySelector('#payErr').textContent='צריך קישור שמתחיל ב-https://';
+    save.disabled=true;
+    const parts=t.participants.map(p=>p.id===to.id?{...p,payLink:v}:p);
+    try{ await tripRef(S.tripId).update({participants:parts}); closeModal(); toast(v?'הקישור נשמר':'הקישור הוסר'); }
+    catch(e){ save.disabled=false; onWriteError(e); }
   };
 }
 function tabShare(){
@@ -870,7 +901,7 @@ function tripForm(existing){
   el.querySelector('#tCancel').onclick=closeModal;
   el.querySelector('#tSave').onclick=async(ev)=>{
     const name=el.querySelector('#tName').value.trim(), base='ILS';
-    const parts=st.participants.map(p=>({id:p.id,name:p.name.trim(),phone:p.phone.trim()})).filter(p=>p.name || used.has(p.id));
+    const parts=st.participants.map(p=>({id:p.id,name:p.name.trim(),phone:p.phone.trim(),...(p.payLink?{payLink:p.payLink}:{})})).filter(p=>p.name || used.has(p.id));
     const err=el.querySelector('#tErr');
     if(!name) return err.textContent='תנו לטיול שם';
     if(parts.length<2) return err.textContent='צריך לפחות שני משתתפים';
@@ -1057,6 +1088,7 @@ document.addEventListener('click', async e=>{
   const act=a.dataset.act;
   if(act==='newTrip'){ if(canCreate()) tripForm(null); else organizerForm(); }
   else if(act==='grant') grantForm();
+  else if(act==='payInfo'){ const x=(S._xs||[])[+a.dataset.i]; if(x) payForm(x); }
   else if(act==='addFlight') flightForm(null);
   else if(act==='editFlight'){ const f=(S.trip.flights||[]).find(x=>x.id===a.dataset.id); if(f) flightForm(f); }
   else if(act==='delFlight'){ const f=(S.trip.flights||[]).find(x=>x.id===a.dataset.id); if(!f) return;
