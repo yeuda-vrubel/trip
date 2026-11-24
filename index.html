@@ -207,7 +207,7 @@ bdi{unicode-bidi:isolate}
 <div id="toast" class="toast"></div>
 <script>
 const ARTIFACT_URL = "";
-const APP_VERSION = "13";
+const APP_VERSION = "14";
 /* ==== הגדרות Firebase: מדביקים כאן את ה-config מהקונסולה ==== */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDQB51Y5dZM3oTwTpslygRIBtxPuxVWhDU",
@@ -577,7 +577,7 @@ function expRow(e){
   const conv = (e.currency!==t.base && r) ? `<small>≈ ${fmt(e.amount*r,t.base)}</small>` : (e.currency!==t.base?'<small>אין שער</small>':'');
   if(e.kind==='transfer'){
     return `<div class="exp" data-act="editExp" data-id="${esc(e.id)}"><span class="ico" style="background:#FCF0D2;color:#8A5A00">${ico('transfer')}</span>
-      <span class="mid"><b>${esc(pName(e.payer))} ← ${esc(pName(e.to))}</b><small>החזר חוב</small></span>
+      <span class="mid"><b>${esc(pName(e.payer))} ← ${esc(pName(e.to))}</b><small>החזר חוב${e.method?' · '+esc(methodName(e.method)):''}</small></span>
       <span class="amt"><b>${fmt(e.amount,e.currency)}</b>${conv}</span></div>`;
   }
   const cat=CATS.find(c=>c[0]===e.cat)||CATS[5], cs=CAT_STYLE[cat[0]]||CAT_STYLE.other;
@@ -625,7 +625,7 @@ async function exportExcel(){
   const exps=[...S.expenses].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.createdAt||0)-(b.createdAt||0));
   const rows1=[['תאריך','תיאור','קטגוריה','מי שילם','סכום','מטבע','שער',inBase,'מתחלק בין']];
   for(const e of exps){ const r=rateOf(e.currency);
-    if(e.kind==='transfer') rows1.push([e.date||'','החזר: '+pName(e.payer)+' ← '+pName(e.to),'החזר',pName(e.payer),Number(e.amount)||0,e.currency,r||'',r?r2(e.amount*r):'',pName(e.to)]);
+    if(e.kind==='transfer') rows1.push([e.date||'','החזר: '+pName(e.payer)+' ← '+pName(e.to)+(e.method?' ('+methodName(e.method)+')':''),'החזר',pName(e.payer),Number(e.amount)||0,e.currency,r||'',r?r2(e.amount*r):'',pName(e.to)]);
     else rows1.push([e.date||'',e.desc||catName(e.cat),catName(e.cat),pName(e.payer),Number(e.amount)||0,e.currency,r||'',r?r2(e.amount*r):'',(e.splitAmong||[]).length===t.participants.length?'כולם':(e.splitAmong||[]).map(pName).join(', ')]); }
   const rows2=[['משתתף','טלפון','שילם','החלק שלו','יתרה','מצב']];
   for(const p of t.participants){ const b=r2(c.bal[p.id]); rows2.push([p.name,p.phone||'',r2(c.paid[p.id]),r2(c.share[p.id]),b,b<-0.009?'צריך להביא':b>0.009?'מקבל':'מאוזן']); }
@@ -784,6 +784,22 @@ function tabSettings(){
 }
 
 /* ---------- modals ---------- */
+const PAY_METHODS=[['cash','מזומן'],['bank','העברה בנקאית'],['bit','ביט'],['paybox','פייבוקס'],['other','אחר']];
+const methodName=k=>(PAY_METHODS.find(m=>m[0]===k)||[,''])[1];
+function methodDialog(title, text){
+  return new Promise(resolve=>{
+    const back=document.createElement('div'); back.className='cfm-back';
+    back.innerHTML=`<div class="cfm" role="dialog" aria-modal="true" aria-labelledby="mdT">
+      <div class="cfm-ico" style="background:var(--teal-soft);color:var(--teal-ink)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg></div>
+      <h4 id="mdT"></h4><p></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">${PAY_METHODS.map(([k,l])=>`<button type="button" class="btn" data-m="${k}" style="padding:14px 6px${k==='other'?';grid-column:1/-1':''}">${l}</button>`).join('')}</div>
+      <button type="button" class="btn ghost" data-m="" style="width:100%">ביטול</button></div>`;
+    back.querySelector('h4').textContent=title; back.querySelector('p').textContent=text||'';
+    const done=v=>{ back.remove(); resolve(v); };
+    back.addEventListener('click',e=>{ const b=e.target.closest('[data-m]'); if(b) done(b.dataset.m||null); else if(e.target===back) done(null); });
+    document.body.appendChild(back);
+  });
+}
 function confirmDialog(title, text, okLabel){
   return new Promise(resolve=>{
     const back=document.createElement('div'); back.className='cfm-back';
@@ -1011,6 +1027,7 @@ function expenseForm(exp){
     ${isTransfer?'':`<div class="field"><label for="eDesc">על מה?</label><input class="inp" id="eDesc" placeholder="ארוחת ערב, מונית, מלון…" value="${esc(st.desc)}"></div>
     <div class="field"><span class="lbl">קטגוריה</span><div class="chips" id="eCat">${CATS.map(c=>`<button type="button" class="chip ${st.cat===c[0]?'on':''}" data-v="${c[0]}">${ico(c[0],16)} ${c[2]}</button>`).join('')}</div></div>`}
     <div class="field"><span class="lbl">${isTransfer?'מי החזיר?':'מי שילם?'}</span><div class="ppl" id="ePayer">${P.map(p=>`<button type="button" class="pchip ${st.payer===p.id?'on':''}" data-v="${esc(p.id)}">${avatar(p.id)}${esc(p.name)}</button>`).join('')}</div></div>
+    ${isTransfer?`<div class="field"><span class="lbl">איך שולם?</span><div class="chips" id="eMethod">${PAY_METHODS.map(([k,l])=>`<button type="button" class="chip ${st.method===k?'on':''}" data-v="${k}">${l}</button>`).join('')}</div></div>`:''}
     ${isTransfer?`<div class="field"><span class="lbl">למי?</span><div class="ppl" id="eTo">${P.map(p=>`<button type="button" class="pchip ${st.to===p.id?'on':''}" data-v="${esc(p.id)}">${avatar(p.id)}${esc(p.name)}</button>`).join('')}</div></div>`:
     `<div class="field"><span class="lbl"><span>מתחלק בין · <a href="#" id="eAll" style="color:var(--teal);text-decoration:underline">כולם</a></span><span id="eEach" style="color:var(--teal-ink)"></span></span><div class="chips" id="eSplit">${P.map(p=>`<button type="button" class="chip ${st.splitAmong.includes(p.id)?'on':''}" data-v="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>`}
     <div class="field"><label for="eDate">תאריך</label><input class="inp" type="date" id="eDate" value="${esc(st.date)}"></div>
@@ -1034,7 +1051,7 @@ function expenseForm(exp){
   };
   q('#eAmt').addEventListener('input',update); q('#eCur').addEventListener('change',update); q('#eRate').addEventListener('input',update);
   const single=(sel,key)=>q(sel)&&q(sel).addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; st[key]=b.dataset.v; q(sel).querySelectorAll('button').forEach(c=>c.classList.toggle('on',c===b)); });
-  single('#eCat','cat'); single('#ePayer','payer'); single('#eTo','to');
+  single('#eCat','cat'); single('#ePayer','payer'); single('#eTo','to'); single('#eMethod','method');
   if(q('#eSplit')){
     q('#eSplit').addEventListener('click',e=>{ const b=e.target.closest('.chip'); if(!b) return; const id=b.dataset.v;
       st.splitAmong = st.splitAmong.includes(id) ? st.splitAmong.filter(x=>x!==id) : [...st.splitAmong,id]; b.classList.toggle('on'); update(); });
@@ -1070,7 +1087,7 @@ function expenseForm(exp){
     try{
       if(needRate) await tripRef(t.id).update({rates:{[st.currency]:rate}});
       const body = isTransfer
-        ? {kind:'transfer', payer:st.payer, to:st.to, amount:a, currency:st.currency, date, desc}
+        ? {kind:'transfer', payer:st.payer, to:st.to, amount:a, currency:st.currency, date, desc, ...(st.method?{method:st.method}:{})}
         : {desc, amount:a, currency:st.currency, payer:st.payer, cat:st.cat, splitAmong:st.splitAmong, date};
       body.createdAt = exp?.createdAt || Date.now(); body.updatedAt = Date.now();
       const id = exp ? exp.id : rid('e');
@@ -1104,8 +1121,10 @@ document.addEventListener('click', async e=>{
   else if(act==='editTrip') tripForm(S.trip);
   else if(act==='copy'){ const v=$('#linkInp').value; try{ await navigator.clipboard.writeText(v); toast('הקישור הועתק'); }catch(_){ $('#linkInp').select(); toast('סמנו והעתיקו את הקישור'); } }
   else if(act==='markPaid'){
-    const x=(S._xs||[])[+a.dataset.i]; if(!x) return; a.disabled=true;
-    try{ await expRef(S.tripId,rid('e')).set({kind:'transfer',payer:x.from,to:x.to,amount:x.amt,currency:S.trip.base,date:today(),desc:'החזר',createdAt:Date.now()}); toast('סומן כשולם'); }
+    const x=(S._xs||[])[+a.dataset.i]; if(!x) return;
+    const m=await methodDialog('איך שולם?', `${pName(x.from)} ← ${pName(x.to)}: ${fmtTxt(x.amt,S.trip.base)}`); if(!m) return;
+    a.disabled=true;
+    try{ await expRef(S.tripId,rid('e')).set({kind:'transfer',payer:x.from,to:x.to,amount:x.amt,currency:S.trip.base,date:today(),desc:'החזר',method:m,createdAt:Date.now()}); toast('סומן כשולם ב'+methodName(m)); }
     catch(err){ a.disabled=false; onWriteError(err); }
   }
   else if(act==='saveRates'){
